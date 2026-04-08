@@ -1,35 +1,27 @@
 import requests
+from typing import List, Dict, Any
 
 class Extract:
-    """
-    Classe responsável por extrair dados de universidades
-    a partir de uma API pública.
-    """
+    """Classe para extrair dados da PNAD Contínua (IBGE)."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         pass
 
-    def extract_country(self, country):
-        """
-        Faz uma requisição à API de universidades filtrando por país.
+    def extract_desocupacao(self) -> List[Dict[str, Any]]:
+        """Extrai a série temporal da taxa de desocupação por sexo."""
+        
+        base_url = "https://servicodados.ibge.gov.br/api/v3/agregados/4093/periodos/201201-202504/variaveis/4099"
 
-        Args:
-            country (str): Nome do país para buscar as universidades.
-
-        Returns:
-            list: Lista de dicionários com os dados das universidades.
-        """
-
-        # Monta a URL da API com o país informado como parâmetro de busca
-        url = f"http://universities.hipolabs.com/search?country={country}"
-
-        # Realiza a requisição GET à API
-        response = requests.get(url)
-
-        # Lança uma exceção caso a requisição retorne um erro HTTP
+        parametros = {
+            "localidades": "N3[26]",
+            "classificacao": "2[all]"
+        }
+        
+        response = requests.get(base_url, params=parametros)
+        
         response.raise_for_status()
-
-        # Converte a resposta JSON em uma lista de dicionários
-        universities = response.json()
-
-        return universities
+        
+        data = response.json()
+        
+        return data
+    

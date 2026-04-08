@@ -1,60 +1,73 @@
-import sqlite3
+import os
+from typing import List, Dict, Any
+from pymongo.mongo_client import MongoClient
+from pymongo.server_api import ServerApi
+from dotenv import load_dotenv
+
+load_dotenv()
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+
+uri = f"mongodb+srv://{DB_USER}:{DB_PASSWORD}@cluster0.qok8d3w.mongodb.net/?appName=Cluster0"
 
 class Load:
-    """
-    Classe responsável por carregar os dados das universidades
-    em um banco de dados SQLite.
-    """
+    """Classe para carregar dados do IBGE diretamente no MongoDB Atlas."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         pass
 
-    def create_sqlite_table(self, universities_list, db_name, table_name):
+    def _transform_ibge_to_list(self, ibge_raw_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        Cria uma tabela no banco de dados SQLite (se não existir) e
-        insere os dados das universidades.
-
-        Args:
-            universities_list (list): Lista de dicionários com dados das universidades.
-            db_name (str): Nome do arquivo do banco de dados (sem extensão).
-            table_name (str): Nome da tabela onde os dados serão inseridos.
+        Transforma o JSON complexo do IBGE em uma lista de documentos simples.
         """
+        flat_data = []
+        
+        if not ibge_raw_data:
+            return flat_data
 
-        # Cria o banco de dados (ou conecta se já existir) e abre a conexão
-        con = sqlite3.connect(f"{db_name}.db")
-        c = con.cursor()
+        resultados = ibge_raw_data[0].get('resultados', [])
+        
+        for res in resultados:
+            categoria = list(res['classificacoes'][0]['categoria'].values())[0]
+            serie = res['series'][0]['serie']
+            
+            for periodo, valor in serie.items():
+                try:
+                    valor_num = float(valor) if valor != "..." else None
+                except (ValueError, TypeError):
+                    valor_num = None
 
-        # Cria a tabela caso ela ainda não exista no banco de dados
-        c.execute(f"""
-            CREATE TABLE IF NOT EXISTS {table_name}
-                (
-                id       INTEGER PRIMARY KEY,
-                name     TEXT,
-                country  TEXT,
-                state_province TEXT,
-                web_pages      TEXT,
-                domains        TEXT
-                );
-        """)
+                flat_data.append({
+                    "categoria": categoria,
+                    "periodo": periodo,
+                    "taxa_desocupacao": valor_num,
+                    "localidade": "Pernambuco"
+                })
+        
+        return flat_data
 
-        # Itera sobre a lista de universidades e insere cada registro na tabela
-        for university in universities_list:
-            c.execute(
-                f"""INSERT INTO {table_name} (name, country, state_province, web_pages, domains)
-                VALUES (?,?,?,?,?);""",
-                (
-                    university.get("name"),
-                    university.get("country"),
-                    university.get("state-province"),
-                    # Converte a lista de web_pages em uma string separada por vírgula
-                    ", ".join(university.get("web_pages", [])),
-                    # Converte a lista de domains em uma string separada por vírgula
-                    ", ".join(university.get("domains", [])),
-                ),
-            )
+    def insert_in_mongo(self, ibge_raw_data: List[Dict], db_name: str, collection_name: str):
+        """Prepara e insere a série temporal no MongoDB Atlas."""
+        
+        client = MongoClient(uri, server_api=ServerApi('1'))
+        
+        try:
+            db = client[db_name]
+            collection = db[collection_name]
 
-        # Confirma (commit) todas as inserções no banco de dados
-        con.commit()
+            # Transformação antes da carga
+            dados_processados = self._transform_ibge_to_list(ibge_raw_data)
 
-        # Encerra a conexão com o banco de dados
-        con.close()
+            if dados_processados:
+                collection.delete_many({}) 
+                
+                collection.insert_many(dados_processados)
+            else:
+                print("Aviso: Nenhum dado processado para inserção.")
+        
+        except Exception as e:
+            print(f"Erro na carga para o MongoDB: {e}")
+        
+        finally:
+            client.close()
+            

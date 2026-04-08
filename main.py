@@ -1,20 +1,25 @@
 from src.extract import Extract
+from typing import List, Dict, Any
 from src.load import Load
 
-# Instancia os objetos de extração e carga
-ext = Extract()
+ext: Extract = Extract()
 ld = Load()
 
-# Extrai a lista de universidades do Brasil e exibe no console
-br = ext.extract_country("Brazil")
-print(br)
+raw_data: List[Dict[str, Any]] = ext.extract_desocupacao()
 
-# Extrai a lista de universidades da Itália e exibe no console
-it = ext.extract_country("Italy")
-print(it)
+if raw_data:
+    resultados = raw_data[0].get('resultados', [])
+    
+    
+    for res in resultados:
+        categoria = res['classificacoes'][0]['categoria']
+        pontos_na_serie = len(res['series'][0]['serie'])
+        
+        print(f"- Categoria: {list(categoria.values())[0]} | Pontos coletados: {pontos_na_serie}")
 
-# Carrega os dados do Brasil na tabela "uni_Brazil" do banco "universidades"
-ld.create_sqlite_table(br, "universidades", "uni_Brazil")
 
-# Carrega os dados da Itália na tabela "uni_italy" do banco "universidades"
-ld.create_sqlite_table(it, "universidades", "uni_italy")
+ld.insert_in_mongo(
+    ibge_raw_data=raw_data, 
+    db_name="projeto_ibge", 
+    collection_name="taxa_desocupacao_sexo"
+)
